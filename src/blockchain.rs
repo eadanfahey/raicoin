@@ -3,7 +3,10 @@ use std::collections::HashMap;
 use num::bigint::BigInt;
 use num::traits::One;
 use num::Num;
-use constants::DIFFICULTY;
+use constants::{DIFFICULTY, BLOCKCHAIN};
+use std::fs::File;
+use std::io::prelude::*;
+use serialize::{deserialize, serialize};
 
 #[derive(Serialize, Deserialize)]
 pub struct Blockchain {
@@ -16,11 +19,11 @@ impl Blockchain {
         self.blocks.get(hash)
     }
 
-    fn validate_block(&self, block: &Block) {
+    fn validate_block(prev_block_hash: &str, block: &Block) {
         let target = BigInt::one() << (256 - DIFFICULTY);
         let hash_int = BigInt::from_str_radix(&block.hash(), 16).unwrap();
 
-        if block.prev_block_hash != self.last_block_hash {
+        if block.prev_block_hash != prev_block_hash {
             panic!("Error: invalid previous_block_hash")
         } else if hash_int > target {
             panic!("Error: invalid nonce")
@@ -28,9 +31,37 @@ impl Blockchain {
     }
 
     pub fn add_block(&mut self, block: Block) {
-        self.validate_block(&block);
+        Blockchain::validate_block(&self.last_block_hash, &block);
         self.last_block_hash = block.hash();
         self.blocks.insert(block.hash(), block);
+    }
+
+    fn validate_chain(&self) {
+        let chain: Vec<(&str, &Block)> = self.iter().collect();
+        let mut prev_hash = "".to_owned();
+
+        for &(hash, block) in chain.iter().rev() {
+            Blockchain::validate_block(&prev_hash, block);
+            prev_hash = hash.to_owned();
+        }
+    }
+
+    pub fn open() -> Blockchain {
+        let mut file = File::open(BLOCKCHAIN).expect(
+            "A blockchain does not exist. Create one!"
+        );
+        let mut contents = String::new();
+        file.read_to_string(&mut contents).unwrap();
+
+        let blockchain: Blockchain = deserialize(&contents);
+        blockchain.validate_chain();
+
+        blockchain
+    }
+
+    pub fn save(&self) {
+        let mut file = File::create(BLOCKCHAIN).unwrap();
+        file.write_all(serialize(self).as_bytes()).unwrap()
     }
 
     pub fn new() -> Blockchain {
@@ -42,6 +73,7 @@ impl Blockchain {
         let data = "Genesis block".to_owned();
         let prev_block_hash = "".to_owned();
         let genesis = Block::mine(data, prev_block_hash);
+
         blockchain.add_block(genesis);
 
         blockchain
@@ -52,6 +84,12 @@ impl Blockchain {
             blockchain: &self,
             current_hash: &self.last_block_hash,
         }
+    }
+}
+
+impl Drop for Blockchain {
+    fn drop(&mut self) {
+        self.save();
     }
 }
 
