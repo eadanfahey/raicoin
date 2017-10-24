@@ -1,10 +1,25 @@
 extern crate raicoin;
-use raicoin::cli;
-use std::process;
+use raicoin::blockchain::Blockchain;
+use raicoin::block::Block;
 
 fn main() {
-    cli::run().unwrap_or_else(|err| {
-        println!("{}", err.to_string());
-        process::exit(1);
-    });
+
+    let mut blockchain = Blockchain::new();
+
+    let block1 = Block::mine(
+        "Infinte Jest".to_owned(),
+        blockchain.last_block_hash.clone(),
+    );
+    blockchain.add_block(block1);
+
+    let block2 = Block::mine(
+        "Gravity's Rainbow".to_owned(),
+        blockchain.last_block_hash.clone(),
+    );
+    blockchain.add_block(block2);
+
+    for (hash, block) in blockchain.iter() {
+        println!("==============================\n");
+        println!("hash: {}\ncontents: {}\n", hash, block);
+    }
 }

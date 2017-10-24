@@ -4,16 +4,11 @@ use serde_json;
 use serialize::serialize;
 use std::fmt;
 use std::time::{SystemTime, UNIX_EPOCH};
-use num::bigint::BigInt;
-use num::traits::One;
-use num::Num;
-use transaction::TX;
-use constants::DIFFICULTY;
 
 #[derive(Serialize, Deserialize)]
 pub struct Block {
     pub timestamp: i64,
-    pub transactions: Vec<TX>,
+    pub data: String,
     pub prev_block_hash: String,
     pub nonce: i64,
 }
@@ -26,29 +21,18 @@ impl Block {
         hash.result_str()
     }
 
-    pub fn mine(transactions: Vec<TX>, prev_block_hash: String) -> Block {
+    pub fn mine(data: String, prev_block_hash: String) -> Block {
         let timestamp = SystemTime::now()
             .duration_since(UNIX_EPOCH)
             .unwrap()
             .as_secs() as i64;
 
-        let mut block = Block {
+        let block = Block {
             timestamp,
-            transactions,
+            data,
             prev_block_hash,
             nonce: 0,
         };
-
-        let target = BigInt::one() << (256 - DIFFICULTY);
-
-        loop {
-            let hash_int = BigInt::from_str_radix(&block.hash(), 16).unwrap();
-            if hash_int < target {
-                break;
-            } else {
-                block.nonce += 1
-            }
-        }
 
         block
     }
