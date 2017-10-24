@@ -7,6 +7,7 @@ use std::collections::HashMap;
 use std::fs::File;
 use std::io::prelude::*;
 use serialize::{serialize, deserialize};
+use constants::WALLETS;
 
 
 #[derive(Serialize, Deserialize)]
@@ -40,12 +41,12 @@ impl Wallet {
 
 impl Wallets {
     pub fn save(&self) {
-        let mut file = File::create("wallets.json").unwrap();
+        let mut file = File::create(WALLETS).unwrap();
         file.write_all(serialize(self).as_bytes()).unwrap()
     }
 
     pub fn open() -> Wallets {
-        let file = File::open("wallets.json");
+        let file = File::open(WALLETS);
 
         match file {
             Ok(mut f) => {

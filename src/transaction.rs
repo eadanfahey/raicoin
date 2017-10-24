@@ -8,6 +8,7 @@ use secp256k1::{Secp256k1, Message, Signature};
 use wallet::{hash_public_key, Wallet};
 use rand::OsRng;
 use rand::Rng;
+use error::{Error, Result};
 
 const REWARD: u64 = 50;
 
@@ -22,13 +23,13 @@ pub struct TXInput {
 #[derive(Debug, Serialize, Deserialize, Clone)]
 pub struct TXOutput {
     pub value: u64,
-    pub pubkey_hash: String
+    pub pubkey_hash: String,
 }
 
 #[derive(Serialize, Deserialize, Clone)]
 pub struct CoinbaseTX {
     outputs: Vec<TXOutput>,
-    rand: u64,
+    rand: u64
 }
 
 #[derive(Serialize, Deserialize, Clone)]
@@ -46,11 +47,10 @@ pub enum TX {
 #[derive(Serialize, Deserialize)]
 struct TransactionData {
     pubkey_hash: String,
-    outputs: Vec<TXOutput>
+    outputs: Vec<TXOutput>,
 }
 
 impl TransactionData {
-
     fn id(&self) -> Vec<u8> {
         let mut hash = Sha256::new();
         hash.input_str(&serialize(&self));
@@ -76,7 +76,7 @@ impl TransactionData {
 
         match secp.verify(&msg, sig, pk) {
             Ok(_) => true,
-            Err(_) => false
+            Err(_) => false,
         }
     }
 }
@@ -96,14 +96,18 @@ impl CoinbaseTX {
 }
 
 impl StandardTX {
-    pub fn new(bc: &Blockchain, wallet: &Wallet, to: &str, amount: u64) -> StandardTX{
+    pub fn new(bc: &Blockchain, wallet: &Wallet, to: &str, amount: u64) -> Result<StandardTX> {
         let utxo = utxo::find(bc);
 
         // Find the outputs needed for the new transaction inputs
         let mut acc_amount = 0;
         let old_outputs: Vec<(String, usize, TXOutput)> = utxo.iter()
-            .flat_map(|(txid, entries)| entries.iter().map(move |entry| (txid, entry)))
-            .filter(|&(_, entry)| entry.output.pubkey_hash == hash_public_key(&wallet.public_key))
+            .flat_map(|(txid, entries)| {
+                entries.iter().map(move |entry| (txid, entry))
+            })
+            .filter(|&(_, entry)| {
+                entry.output.pubkey_hash == hash_public_key(&wallet.public_key)
+            })
             .take_while(move |_| acc_amount <= amount)
             .map(|(txid, entry)| {
                 acc_amount += entry.output.value;
@@ -112,7 +116,7 @@ impl StandardTX {
             .collect();
 
         if acc_amount < amount {
-            panic!("Insufficient funds");
+            return Err(Error::InsufficientFunds);
         }
 
         // Make the new transaction outputs
@@ -132,7 +136,7 @@ impl StandardTX {
             .map(|(txid, vout, output)| {
                 let data = TransactionData {
                     pubkey_hash: output.pubkey_hash,
-                    outputs: new_outputs.clone()
+                    outputs: new_outputs.clone(),
                 };
 
                 TXInput {
@@ -145,41 +149,45 @@ impl StandardTX {
             })
             .collect();
 
-        StandardTX {
+        Ok(StandardTX {
             inputs: new_inputs,
-            outputs: new_outputs
-        }
+            outputs: new_outputs,
+        })
     }
 
-    fn verify_input(&self, input: &TXInput, bc: &Blockchain) -> bool {
+    fn verify_input(&self, input: &TXInput, bc: &Blockchain) -> Result<()> {
+        use self::Error::*;
         match bc.find_transaction(&input.txid) {
-            None => panic!("Transaction does not exist"),
+            None => { return Err(TransactionMissing); },
             Some(prev_tx) => {
                 match prev_tx.outputs().get(input.vout) {
-                    None => panic!("TXOutput does not exist"),
+                    None => { return Err(NoTXOutput); },
                     Some(prev_output) => {
                         let data = TransactionData {
                             pubkey_hash: prev_output.pubkey_hash.clone(),
-                            outputs: self.outputs.clone()
+                            outputs: self.outputs.clone(),
                         };
                         if !data.verify(&input.signature, &input.pubkey) {
-                            return false
+                            return Err(PubkeySignatureMismatch);
                         }
                     }
                 }
             }
         }
-        true
+
+        Ok(())
     }
 
-    pub fn verify(&self, bc: &Blockchain) -> bool {
+    pub fn verify(&self, bc: &Blockchain) -> Result<()> {
         for input in self.inputs.iter() {
             match self.verify_input(input, bc) {
-                true => {},
-                false => { return false; }
+                Ok(_) => {},
+                Err(e) => { return Err(e); }
             }
+
         }
-        true
+
+        Ok(())
     }
 }
 

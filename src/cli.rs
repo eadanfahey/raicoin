@@ -5,6 +5,8 @@ use utxo;
 use transaction::*;
 use wallet::{Wallet, Wallets, hash_public_key};
 use std::collections::HashMap;
+use mempool::MemPool;
+use error::{Result, Error};
 
 enum Operation {
     NewChain,
@@ -12,6 +14,7 @@ enum Operation {
     Balances,
     Send(String, String, u64),
     NewWallet,
+    Mine(String)
 }
 
 fn parse_args() -> Operation {
@@ -20,7 +23,7 @@ fn parse_args() -> Operation {
         .arg(
             Arg::with_name("operation")
                 .help("The type of operation")
-                .possible_values(&["newchain", "printchain", "balance", "send", "newwallet"])
+                .possible_values(&["newchain", "printchain", "balance", "send", "newwallet", "mine"])
                 .required(true),
         )
         .arg(
@@ -44,6 +47,13 @@ fn parse_args() -> Operation {
                 .long("amount")
                 .takes_value(true),
         )
+        .arg(
+            Arg::with_name("rewardto")
+                .help("The address to send the block reward to")
+                .required_if("operation", "mine")
+                .long("rewardto")
+                .takes_value(true)
+        )
         .get_matches();
 
     let operation = matches.value_of("operation").unwrap();
@@ -64,9 +74,13 @@ fn parse_args() -> Operation {
         Operation::Send(from.to_owned(), to.to_owned(), amount)
     } else if operation == "newwallet" {
         Operation::NewWallet
-    } else {
-        panic!("Unknown argument {}", operation)
+    } else if operation == "mine" {
+        let reward_to = matches.value_of("rewardto").unwrap();
+        Operation::Mine(reward_to.to_owned())
     }
+    else {
+        panic!("Unknown argument {}", operation)
+     }
 }
 
 fn get_balances(bc: &Blockchain) -> HashMap<String, u64> {
@@ -81,20 +95,33 @@ fn get_balances(bc: &Blockchain) -> HashMap<String, u64> {
         })
 }
 
-fn send(bc: &mut Blockchain, from: &str, to:&str, amount: u64) {
+fn send(mp: &mut MemPool, bc: &Blockchain, from: &str, to:&str, amount: u64) -> Result<()> {
 
     let wallets = Wallets::open();
-    let from_wallet = wallets.get(from).expect(
-        &format!("The address {} does not exist", from)
-    );
+    let from_wallet = wallets.get(from).ok_or(Error::NoWalletForAddress)?;
 
-    let tx = TX::Standard(StandardTX::new(bc, from_wallet, to, amount));
-    let block = Block::mine(vec![tx], bc.last_block_hash.to_owned());
+    let tx = TX::Standard(StandardTX::new(bc, from_wallet, to, amount)?);
+    mp.push(bc, tx)?;
 
-    bc.add_block(block);
+    Ok(())
 }
 
-pub fn run() {
+fn mine(mp: &mut MemPool, bc: &mut Blockchain, reward_to: &str) -> Result<()> {
+    let reward = TX::Coinbase(CoinbaseTX::new(reward_to.to_owned()));
+
+    let transactions = match mp.pop() {
+        Some(tx) => vec![tx, reward],
+        None => vec![reward]
+    };
+    let prev_block_hash = bc.last_block_hash.clone();
+
+    let block = Block::mine(transactions, prev_block_hash);
+    bc.add_block(block)?;
+
+    Ok(())
+}
+
+pub fn run() -> Result<()> {
     let operation = parse_args();
 
     match operation {
@@ -102,26 +129,28 @@ pub fn run() {
             let mut wallets = Wallets::open();
             let wallet = Wallet::new();
             let address = hash_public_key(&wallet.public_key);
-            Blockchain::new(&address);
+            Blockchain::new(&address)?;
             wallets.add(wallet);
             println!("Created a new blockchain");
         }
         Operation::PrintChain => {
-            let blockchain = Blockchain::open();
+            let blockchain = Blockchain::open()?;
             for (hash, block) in blockchain.iter() {
                 println!("==============================\n");
                 println!("hash: {}\ncontents: {}\n", hash, block);
             }
         }
         Operation::Balances => {
-            let bc = Blockchain::open();
+            let bc = Blockchain::open()?;
             for (address, balance) in get_balances(&bc) {
                 println!("{}: {}", address, balance);
             }
         }
         Operation::Send(from, to, amount) => {
-            let mut bc = Blockchain::open();
-            send(&mut bc, &from, &to, amount);
+            let mut bc = Blockchain::open()?;
+            let mut mp = MemPool::open();
+            send(&mut mp, &mut bc, &from, &to, amount)?;
+            println!("Sent transaction to the mempool")
         }
         Operation::NewWallet => {
             let mut wallets = Wallets::open();
@@ -131,5 +160,13 @@ pub fn run() {
             wallets.add(wallet);
 
         }
+        Operation::Mine(reward_to) => {
+            let bc = &mut Blockchain::open()?;
+            let mp = &mut MemPool::open();
+            mine(mp, bc, &reward_to)?;
+            println!("Mined a block and added it to the blockchain");
+        }
     }
+
+    Ok(())
 }

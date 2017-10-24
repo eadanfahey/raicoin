@@ -15,4 +15,6 @@ pub mod cli;
 pub mod transaction;
 pub mod utxo;
 pub mod wallet;
+pub mod mempool;
+pub mod error;
 pub mod constants;
