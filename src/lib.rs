@@ -8,3 +8,4 @@ extern crate num;
 pub mod block;
 pub mod serialize;
 pub mod blockchain;
+pub mod constants;

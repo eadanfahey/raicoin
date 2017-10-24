@@ -1,6 +1,9 @@
 use block::Block;
 use std::collections::HashMap;
-
+use num::bigint::BigInt;
+use num::traits::One;
+use num::Num;
+use constants::DIFFICULTY;
 
 #[derive(Serialize, Deserialize)]
 pub struct Blockchain {
@@ -14,8 +17,13 @@ impl Blockchain {
     }
 
     fn validate_block(&self, block: &Block) {
+        let target = BigInt::one() << (256 - DIFFICULTY);
+        let hash_int = BigInt::from_str_radix(&block.hash(), 16).unwrap();
+
         if block.prev_block_hash != self.last_block_hash {
             panic!("Error: invalid previous_block_hash")
+        } else if hash_int > target {
+            panic!("Error: invalid nonce")
         }
     }
 

@@ -4,6 +4,10 @@ use serde_json;
 use serialize::serialize;
 use std::fmt;
 use std::time::{SystemTime, UNIX_EPOCH};
+use num::bigint::BigInt;
+use num::traits::One;
+use num::Num;
+use constants::DIFFICULTY;
 
 #[derive(Serialize, Deserialize)]
 pub struct Block {
@@ -27,12 +31,23 @@ impl Block {
             .unwrap()
             .as_secs() as i64;
 
-        let block = Block {
+        let mut block = Block {
             timestamp,
             data,
             prev_block_hash,
             nonce: 0,
         };
+
+        let target = BigInt::one() << (256 - DIFFICULTY);
+
+        loop {
+            let hash_int = BigInt::from_str_radix(&block.hash(), 16).unwrap();
+            if hash_int < target {
+                break;
+            } else {
+                block.nonce += 1
+            }
+        }
 
         block
     }
