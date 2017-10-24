@@ -5,9 +5,12 @@ extern crate serde_json;
 extern crate serde_derive;
 extern crate num;
 extern crate clap;
+extern crate rand;
 
 pub mod block;
 pub mod serialize;
 pub mod blockchain;
 pub mod cli;
+pub mod transaction;
+pub mod utxo;
 pub mod constants;

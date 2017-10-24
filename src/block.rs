@@ -7,12 +7,13 @@ use std::time::{SystemTime, UNIX_EPOCH};
 use num::bigint::BigInt;
 use num::traits::One;
 use num::Num;
+use transaction::TX;
 use constants::DIFFICULTY;
 
 #[derive(Serialize, Deserialize)]
 pub struct Block {
     pub timestamp: i64,
-    pub data: String,
+    pub transactions: Vec<TX>,
     pub prev_block_hash: String,
     pub nonce: i64,
 }
@@ -25,7 +26,7 @@ impl Block {
         hash.result_str()
     }
 
-    pub fn mine(data: String, prev_block_hash: String) -> Block {
+    pub fn mine(transactions: Vec<TX>, prev_block_hash: String) -> Block {
         let timestamp = SystemTime::now()
             .duration_since(UNIX_EPOCH)
             .unwrap()
@@ -33,7 +34,7 @@ impl Block {
 
         let mut block = Block {
             timestamp,
-            data,
+            transactions,
             prev_block_hash,
             nonce: 0,
         };

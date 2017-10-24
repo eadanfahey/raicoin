@@ -7,12 +7,14 @@ use constants::{DIFFICULTY, BLOCKCHAIN};
 use std::fs::File;
 use std::io::prelude::*;
 use serialize::{deserialize, serialize};
+use transaction::{TX, CoinbaseTX};
 
 #[derive(Serialize, Deserialize)]
 pub struct Blockchain {
     blocks: HashMap<String, Block>,
     pub last_block_hash: String,
 }
+
 
 impl Blockchain {
     pub fn get_block(&self, hash: &str) -> Option<&Block> {
@@ -70,9 +72,9 @@ impl Blockchain {
             last_block_hash: String::new(),
         };
 
-        let data = "Genesis block".to_owned();
         let prev_block_hash = "".to_owned();
-        let genesis = Block::mine(data, prev_block_hash);
+        let tx = TX::Coinbase(CoinbaseTX::new("Satoshi".to_owned()));
+        let genesis = Block::mine(vec![tx], prev_block_hash);
 
         blockchain.add_block(genesis);
 
