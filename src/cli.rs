@@ -3,6 +3,7 @@ use blockchain::Blockchain;
 use block::Block;
 use utxo;
 use transaction::*;
+use wallet::{Wallet, Wallets, hash_public_key};
 use std::collections::HashMap;
 
 enum Operation {
@@ -10,6 +11,7 @@ enum Operation {
     PrintChain,
     Balances,
     Send(String, String, u64),
+    NewWallet,
 }
 
 fn parse_args() -> Operation {
@@ -18,7 +20,7 @@ fn parse_args() -> Operation {
         .arg(
             Arg::with_name("operation")
                 .help("The type of operation")
-                .possible_values(&["newchain", "printchain", "balance", "send"])
+                .possible_values(&["newchain", "printchain", "balance", "send", "newwallet"])
                 .required(true),
         )
         .arg(
@@ -60,6 +62,8 @@ fn parse_args() -> Operation {
             "Amount must be a positive integer",
         );
         Operation::Send(from.to_owned(), to.to_owned(), amount)
+    } else if operation == "newwallet" {
+        Operation::NewWallet
     } else {
         panic!("Unknown argument {}", operation)
     }
@@ -70,15 +74,21 @@ fn get_balances(bc: &Blockchain) -> HashMap<String, u64> {
         .iter()
         .flat_map(|(_, entries)| entries.iter())
         .fold(HashMap::new(), |mut acc, entry| {
-            let recipient = entry.output.recipient.clone();
+            let pubkey_hash = entry.output.pubkey_hash.clone();
             let value = entry.output.value;
-            *acc.entry(recipient).or_insert(0) += value;
+            *acc.entry(pubkey_hash).or_insert(0) += value;
             acc
         })
 }
 
-fn send(bc: &mut Blockchain, from: &str, to: &str, amount: u64) {
-    let tx = TX::Standard(StandardTX::new(bc, from, to, amount));
+fn send(bc: &mut Blockchain, from: &str, to:&str, amount: u64) {
+
+    let wallets = Wallets::open();
+    let from_wallet = wallets.get(from).expect(
+        &format!("The address {} does not exist", from)
+    );
+
+    let tx = TX::Standard(StandardTX::new(bc, from_wallet, to, amount));
     let block = Block::mine(vec![tx], bc.last_block_hash.to_owned());
 
     bc.add_block(block);
@@ -89,7 +99,11 @@ pub fn run() {
 
     match operation {
         Operation::NewChain => {
-            Blockchain::new();
+            let mut wallets = Wallets::open();
+            let wallet = Wallet::new();
+            let address = hash_public_key(&wallet.public_key);
+            Blockchain::new(&address);
+            wallets.add(wallet);
             println!("Created a new blockchain");
         }
         Operation::PrintChain => {
@@ -108,6 +122,14 @@ pub fn run() {
         Operation::Send(from, to, amount) => {
             let mut bc = Blockchain::open();
             send(&mut bc, &from, &to, amount);
+        }
+        Operation::NewWallet => {
+            let mut wallets = Wallets::open();
+            let wallet = Wallet::new();
+            let address = hash_public_key(&wallet.public_key);
+            println!("Created wallet:\n{}", address);
+            wallets.add(wallet);
+
         }
     }
 }

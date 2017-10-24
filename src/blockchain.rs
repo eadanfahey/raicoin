@@ -21,7 +21,7 @@ impl Blockchain {
         self.blocks.get(hash)
     }
 
-    fn validate_block(prev_block_hash: &str, block: &Block) {
+    fn validate_block(&self, prev_block_hash: &str, block: &Block) {
         let target = BigInt::one() << (256 - DIFFICULTY);
         let hash_int = BigInt::from_str_radix(&block.hash(), 16).unwrap();
 
@@ -30,10 +30,21 @@ impl Blockchain {
         } else if hash_int > target {
             panic!("Error: invalid nonce")
         }
+
+        for tx in block.transactions.iter() {
+            match tx {
+                &TX::Coinbase(_) => {},
+                &TX::Standard(ref tx) => {
+                    if !tx.verify(&self) {
+                        panic!("Error: invalid transaction")
+                    }
+                }
+            }
+        }
     }
 
     pub fn add_block(&mut self, block: Block) {
-        Blockchain::validate_block(&self.last_block_hash, &block);
+        self.validate_block(&self.last_block_hash, &block);
         self.last_block_hash = block.hash();
         self.blocks.insert(block.hash(), block);
     }
@@ -43,7 +54,7 @@ impl Blockchain {
         let mut prev_hash = "".to_owned();
 
         for &(hash, block) in chain.iter().rev() {
-            Blockchain::validate_block(&prev_hash, block);
+            self.validate_block(&prev_hash, block);
             prev_hash = hash.to_owned();
         }
     }
@@ -66,19 +77,24 @@ impl Blockchain {
         file.write_all(serialize(self).as_bytes()).unwrap()
     }
 
-    pub fn new() -> Blockchain {
+    pub fn new(genesis_address: &str) -> Blockchain {
         let mut blockchain = Blockchain {
             blocks: HashMap::new(),
             last_block_hash: String::new(),
         };
 
         let prev_block_hash = "".to_owned();
-        let tx = TX::Coinbase(CoinbaseTX::new("Satoshi".to_owned()));
+        let tx = TX::Coinbase(CoinbaseTX::new(genesis_address.to_owned()));
         let genesis = Block::mine(vec![tx], prev_block_hash);
-
         blockchain.add_block(genesis);
 
         blockchain
+    }
+
+    pub fn find_transaction(&self, txid: &str) -> Option<&TX> {
+        self.iter()
+            .flat_map(|(_, block)| block.transactions.iter())
+            .find(|tx| tx.id() == txid)
     }
 
     pub fn iter(&self) -> IterBlockchain {
